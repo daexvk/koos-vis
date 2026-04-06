@@ -8,7 +8,7 @@ import xarray as xr
 from app.settings.tile_utils import (
     bucket_nodes, collect_target_tiles, save_meta, save_tiles,
 )
-from app.settings.mesh_utils import coarsen_mesh, subset_connectivity
+from app.settings.mesh_utils import stride_coarsen_mesh, subset_connectivity
 
 
 DATA_FILE = Path.home() / "data" / "0314_surge_res_korea.slf"
@@ -19,7 +19,7 @@ def process_zoom_level(
     zoom: int,
     cache_root: Path,
     *,
-    coarsen_factor: float | None = None,
+    stride: int | None = None,
     target_tiles: set[tuple[int, int, int]] | None = None,
 ) -> tuple[int, int, int]:
     """특정 줌 레벨에 대해 coarsen(optional) + 서브셋 + 타일 저장을 수행한다."""
@@ -31,41 +31,43 @@ def process_zoom_level(
     if ikle2.min() >= 1:
         ikle2 -= 1
 
-    if coarsen_factor is not None: # coarsen_factor가 float인 경우 cKDTree 기반 coarsen 수행
+    if stride is not None:
         ipobo = np.array(ds.attrs["ipobo"])
-        keep, simplices = coarsen_mesh(ikle2, lon, lat, ipobo, factor=coarsen_factor)
-        lon, lat, h, s = lon[keep], lat[keep], h[keep], s[keep]
-        print(f"z{zoom} coarsen: {len(keep)} nodes, {len(simplices)} triangles")
-    else: # coarsen_factor가 None인 경우 coarsen을 수행하지 않음
+        keep_mask, simplices = stride_coarsen_mesh(ikle2, lon, lat, ipobo, stride)
+        keep_idx = np.where(keep_mask)[0]
+        lon_k, lat_k, h_k, s_k = lon[keep_idx], lat[keep_idx], h[keep_idx], s[keep_idx]
+        print(f"z{zoom} stride coarsen: {len(keep_idx)} nodes, {len(simplices)} triangles")
+        buckets = bucket_nodes(lon_k, lat_k, h_k, s_k, zoom, target_tiles, indices=keep_idx)
+    else:
         simplices = ikle2
+        buckets = bucket_nodes(lon, lat, h, s, zoom, target_tiles)
 
-    buckets = bucket_nodes(lon, lat, h, s, zoom, target_tiles)
-
-    if target_tiles is not None and coarsen_factor is None:
+    if target_tiles is not None and stride is None:
         node_mask = np.zeros(len(lon), dtype=bool)
         for pts in buckets.values():
             for pt in pts:
                 node_mask[pt["idx"]] = True
         simplices = subset_connectivity(ikle2, node_mask)
 
+    n_nodes = len(keep_idx) if stride is not None else len(lon)
     save_tiles(cache_root / str(zoom), zoom, buckets, simplices)
-    print(f"z{zoom}: {len(simplices)} tri, {len(lon)} nodes, {len(buckets)} tiles")
+    print(f"z{zoom}: {len(simplices)} tri, {n_nodes} nodes, {len(buckets)} tiles")
 
-    return len(lon), len(simplices), len(buckets)
+    return n_nodes, len(simplices), len(buckets)
 
 
 def main() -> None:
-    COARSEN_FACTOR = 3.0
+    STRIDE = 5
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 
     ds = xr.open_dataset(DATA_FILE, engine="selafin")
 
     # --- zoom 6 (coarsened). 전국 데이터 타일링 ---
     n_pts, n_tri, n_tiles = process_zoom_level(
-        ds, 6, CACHE_ROOT, coarsen_factor=COARSEN_FACTOR,
+        ds, 6, CACHE_ROOT, stride=STRIDE,
     )
     save_meta(CACHE_ROOT, ds.coords["time"].values, str(DATA_FILE),
-              6, COARSEN_FACTOR, n_pts, n_tri, n_tiles)
+              6, STRIDE, n_pts, n_tri, n_tiles)
 
     # --- zoom 11 (original). 항구별 데이터 타일링 ---
     Z11_SUBSET_TILES = {
