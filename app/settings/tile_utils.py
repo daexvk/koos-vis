@@ -44,16 +44,21 @@ def bucket_nodes(
     s: np.ndarray,
     z: int,
     target_tiles: set[tuple[int, int]] | None = None,
+    indices: np.ndarray | None = None,
 ) -> dict[tuple[int, int], list[dict]]:
-    """노드를 타일별로 분류한다. 각 포인트에 idx를 부여."""
+    """노드를 타일별로 분류한다. 각 포인트에 idx를 부여.
+
+    indices가 주어지면 원본 인덱스를 idx로 사용한다.
+    """
     buckets: dict[tuple[int, int], list[dict]] = defaultdict(list)
 
     for i in range(len(lon)):
         tx, ty = lonlat_to_xyz_tile(float(lon[i]), float(lat[i]), z)
         if target_tiles is not None and (tx, ty) not in target_tiles:
             continue
+        idx = int(indices[i]) if indices is not None else int(i)
         buckets[(tx, ty)].append({
-            "idx": int(i),
+            "idx": idx,
             "lat": float(lat[i]),
             "lon": float(lon[i]),
             "h": float(h[i]),

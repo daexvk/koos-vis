@@ -5,3 +5,5 @@ numpy
 scipy
 xarray
 xarray-selafin
+Pillow
+matplotlib
