@@ -1,16 +1,27 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.services.cache_service import read_tile, read_connectivity, get_coastline_path, get_coastline_simplified_path, get_coastline_tile_path, get_webp_tile_path,get_flood_tile_path, get_flood_connectivity_path, get_uv_tile_path, get_uv_connectivity_path
+from app.services.cache_service import read_tile, read_connectivity, get_coastline_path, get_coastline_simplified_path, get_coastline_tile_path, get_webp_tile_path,get_flood_tile_path, get_flood_connectivity_path, get_uv_tile_path, get_uv_connectivity_path, read_uv_times, read_flood_times
 from app.core.auth import verify_api_key
 from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter(prefix="/api", tags=["tiles"])
 
-@router.get("/flood/conns/{z}")
+@router.get("/flood/times")
+def get_flood_times(
+    _: None = Depends(verify_api_key),
+):
+    result = read_flood_times()
+    if result is None:
+        return JSONResponse(content={"time_indices": [], "times": []})
+    return result
+
+
+@router.get("/flood/{time_index}/conns/{z}")
 def get_flood_connectivity(
+    time_index: int,
     z: int,
     _: None = Depends(verify_api_key),
 ):
-    path = get_flood_connectivity_path(z)
+    path = get_flood_connectivity_path(time_index, z)
 
     if path is None:
         return JSONResponse(content={"triangles": []})
@@ -22,14 +33,23 @@ def get_flood_connectivity(
     )
 
 
-@router.get("/flood/{z}/{x}/{y}")
+@router.get("/flood/conns/{z}")
+def get_flood_connectivity_legacy(
+    z: int,
+    _: None = Depends(verify_api_key),
+):
+    return get_flood_connectivity(time_index=0, z=z, _=_)
+
+
+@router.get("/flood/{time_index}/{z}/{x}/{y}")
 def get_flood_tile(
+    time_index: int,
     z: int,
     x: int,
     y: int,
     _: None = Depends(verify_api_key),
 ):
-    path = get_flood_tile_path(z, x, y)
+    path = get_flood_tile_path(time_index, z, x, y)
 
     if path is None:
         return JSONResponse(
@@ -37,7 +57,7 @@ def get_flood_tile(
                 "z": z,
                 "x": x,
                 "y": y,
-                "time_index": 0,
+                "time_index": time_index,
                 "points": [],
             }
         )
@@ -48,12 +68,34 @@ def get_flood_tile(
         filename=f"{y}.json",
     )
 
-@router.get("/uv/connectivity/{z}")
+
+@router.get("/flood/{z}/{x}/{y}")
+def get_flood_tile_legacy(
+    z: int,
+    x: int,
+    y: int,
+    _: None = Depends(verify_api_key),
+):
+    return get_flood_tile(time_index=0, z=z, x=x, y=y, _=_)
+
+
+@router.get("/uv/times")
+def get_uv_times(
+    _: None = Depends(verify_api_key),
+):
+    result = read_uv_times()
+    if result is None:
+        return JSONResponse(content={"time_indices": [], "times": []})
+    return result
+
+
+@router.get("/uv/{time_index}/connectivity/{z}")
 def get_uv_connectivity(
+    time_index: int,
     z: int,
     _: None = Depends(verify_api_key),
 ):
-    path = get_uv_connectivity_path(z)
+    path = get_uv_connectivity_path(time_index, z)
 
     if path is None:
         return JSONResponse(content={"triangles": []})
@@ -65,14 +107,23 @@ def get_uv_connectivity(
     )
 
 
-@router.get("/uv/{z}/{x}/{y}")
+@router.get("/uv/connectivity/{z}")
+def get_uv_connectivity_legacy(
+    z: int,
+    _: None = Depends(verify_api_key),
+):
+    return get_uv_connectivity(time_index=864, z=z, _=_)
+
+
+@router.get("/uv/{time_index}/{z}/{x}/{y}")
 def get_uv_tile(
+    time_index: int,
     z: int,
     x: int,
     y: int,
     _: None = Depends(verify_api_key),
 ):
-    path = get_uv_tile_path(z, x, y)
+    path = get_uv_tile_path(time_index, z, x, y)
 
     if path is None:
         return JSONResponse(
@@ -80,7 +131,7 @@ def get_uv_tile(
                 "z": z,
                 "x": x,
                 "y": y,
-                "time_index": 0,
+                "time_index": time_index,
                 "points": [],
                 "triangles": [],
             }
@@ -91,6 +142,16 @@ def get_uv_tile(
         media_type="application/json",
         filename=f"{y}.json",
     )
+
+
+@router.get("/uv/{z}/{x}/{y}")
+def get_uv_tile_legacy(
+    z: int,
+    x: int,
+    y: int,
+    _: None = Depends(verify_api_key),
+):
+    return get_uv_tile(time_index=864, z=z, x=x, y=y, _=_)
 
 
 @router.get("/coastline")
