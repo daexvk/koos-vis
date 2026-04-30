@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import argparse
 import json
-import math
 from collections import defaultdict
 from pathlib import Path
 
@@ -9,28 +9,56 @@ import numpy as np
 import xarray as xr
 
 from app.settings.mesh_utils import subset_connectivity
+from app.settings.tile_utils import lonlat_to_xyz_tile
 
 
 SLF_PATH = Path.home() / "data" / "0314_surge_res_korea.slf"
 OUTPUT_ROOT = Path.home() / "data" / "flood_tiles"
 
 
-def lonlat_to_xyz_tile(lon: float, lat: float, z: int) -> tuple[int, int]:
-    lat = max(min(lat, 85.05112878), -85.05112878)
+def parse_time_indices(value: str) -> list[int]:
+    if not value:
+        raise ValueError("time index list cannot be empty")
+    if value.strip().lower() == "all":
+        return []
 
-    n = 2**z
-    xtile = int((lon + 180.0) / 360.0 * n)
+    indices: list[int] = []
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_text, end_text = part.split("-", 1)
+            start = int(start_text)
+            end = int(end_text)
+            if end < start:
+                raise ValueError(f"invalid time range: {part}")
+            indices.extend(range(start, end + 1))
+        else:
+            indices.append(int(part))
 
-    lat_rad = math.radians(lat)
-    ytile = int(
-        (1.0 - math.log(math.tan(lat_rad) + 1.0 / math.cos(lat_rad)) / math.pi)
-        / 2.0
-        * n
-    )
+    return sorted(set(indices))
 
-    xtile = max(0, min(xtile, n - 1))
-    ytile = max(0, min(ytile, n - 1))
-    return xtile, ytile
+
+def write_times_meta(
+    output_root: Path,
+    ds_time_values,
+    source_file: str,
+    time_indices: list[int],
+) -> None:
+    payload = {
+        "source_file": source_file,
+        "time_indices": time_indices,
+        "times": [
+            {
+                "time_index": int(i),
+                "time_value": str(ds_time_values[i]),
+            }
+            for i in time_indices
+        ],
+    }
+    with open(output_root / "times.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
 def find_data_var(ds: xr.Dataset, candidates: list[str]) -> str:
@@ -84,14 +112,17 @@ def to_numpy_1d(da: xr.DataArray, time_index: int | None = None) -> np.ndarray:
     return values.astype(float, copy=False)
 
 
-def load_slf_snapshot(slf_path: Path, time_index: int = 0):
-    ds = xr.open_dataset(slf_path, engine="selafin")
-
+def get_slf_variable_names(ds: xr.Dataset) -> tuple[str, str, str, str]:
     lon_name = find_coord_var(ds, ["meshx", "lon", "longitude", "x"])
     lat_name = find_coord_var(ds, ["meshy", "lat", "latitude", "y"])
-
     s_name = find_data_var(ds, ["s", "free_surface", "water_surface", "ssh"])
     h_name = find_data_var(ds, ["h", "water_depth", "depth"])
+    return lon_name, lat_name, s_name, h_name
+
+
+def load_slf_snapshot(slf_path: Path, time_index: int = 0):
+    ds = xr.open_dataset(slf_path, engine="selafin")
+    lon_name, lat_name, s_name, h_name = get_slf_variable_names(ds)
 
     lon = to_numpy_1d(ds[lon_name])
     lat = to_numpy_1d(ds[lat_name])
@@ -106,16 +137,18 @@ def load_slf_snapshot(slf_path: Path, time_index: int = 0):
     return lon, lat, s, h, ikle2
 
 
-def build_flood_tiles(
-    slf_path: Path,
+def build_flood_tiles_for_time(
+    lon: np.ndarray,
+    lat: np.ndarray,
+    s: np.ndarray,
+    h: np.ndarray,
+    ikle2: np.ndarray,
+    source_file: str,
     output_root: Path,
-    min_z: int = 11,
-    max_z: int = 13,
+    min_z: int,
+    max_z: int,
     time_index: int = 0,
 ) -> None:
-    print(f"[1/3] read: {slf_path}")
-    lon, lat, s, h, ikle2 = load_slf_snapshot(slf_path, time_index=time_index)
-
     raw_flood = s - h
     flood = np.where(np.isfinite(raw_flood), np.maximum(raw_flood, 0.0), np.nan)
 
@@ -136,8 +169,6 @@ def build_flood_tiles(
         f"flooded nodes: {positive_count}, triangles: {len(triangles)}"
     )
 
-    output_root.mkdir(parents=True, exist_ok=True)
-
     for z in range(min_z, max_z + 1):
         buckets: dict[tuple[int, int], list[dict]] = defaultdict(list)
 
@@ -152,7 +183,7 @@ def build_flood_tiles(
                 }
             )
 
-        z_dir = output_root / str(z)
+        z_dir = output_root / f"t{time_index}" / str(z)
         z_dir.mkdir(parents=True, exist_ok=True)
 
         with open(z_dir / "connectivity.json", "w", encoding="utf-8") as f:
@@ -174,7 +205,7 @@ def build_flood_tiles(
                 json.dump(payload, f, ensure_ascii=False)
 
         meta = {
-            "source_file": str(slf_path),
+            "source_file": source_file,
             "zoom": z,
             "time_index": time_index,
             "point_count": len(valid_indices),
@@ -192,11 +223,91 @@ def build_flood_tiles(
     print("[3/3] done")
 
 
-if __name__ == "__main__":
-    build_flood_tiles(
-        slf_path=SLF_PATH,
-        output_root=OUTPUT_ROOT,
-        min_z=11,
-        max_z=13,
-        time_index=0,
+def build_flood_tiles(
+    slf_path: Path,
+    output_root: Path,
+    min_z: int = 11,
+    max_z: int = 13,
+    time_indices: list[int] | None = None,
+) -> None:
+    output_root.mkdir(parents=True, exist_ok=True)
+    if time_indices is None:
+        time_indices = [0]
+
+    print(f"[1/3] read: {slf_path}")
+    ds = xr.open_dataset(slf_path, engine="selafin")
+    ds_time_values = ds.coords["time"].values
+    max_time_index = len(ds_time_values) - 1
+    if time_indices == []:
+        time_indices = list(range(max_time_index + 1))
+    invalid = [i for i in time_indices if i < 0 or i > max_time_index]
+    if invalid:
+        raise ValueError(
+            f"time index out of range: {invalid}. valid range=0-{max_time_index}"
+        )
+
+    lon_name, lat_name, s_name, h_name = get_slf_variable_names(ds)
+    lon = to_numpy_1d(ds[lon_name])
+    lat = to_numpy_1d(ds[lat_name])
+    ikle2 = np.asarray(ds.attrs["ikle2"])
+    if ikle2.min() >= 1:
+        ikle2 = ikle2 - 1
+
+    write_times_meta(output_root, ds_time_values, str(slf_path), time_indices)
+
+    for time_index in time_indices:
+        print(f"[time {time_index}] build flood tiles")
+        s = to_numpy_1d(ds[s_name], time_index=time_index)
+        h = to_numpy_1d(ds[h_name], time_index=time_index)
+        build_flood_tiles_for_time(
+            lon=lon,
+            lat=lat,
+            s=s,
+            h=h,
+            ikle2=ikle2,
+            source_file=str(slf_path),
+            output_root=output_root,
+            min_z=min_z,
+            max_z=max_z,
+            time_index=time_index,
+        )
+
+    ds.close()
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--slf", default=str(SLF_PATH), help="Input SLF path")
+    parser.add_argument(
+        "--output",
+        default=str(OUTPUT_ROOT),
+        help="Output root for flood tiles",
     )
+    parser.add_argument("--min-z", type=int, default=11)
+    parser.add_argument("--max-z", type=int, default=13)
+    parser.add_argument("--time-index", type=int, default=0)
+    parser.add_argument(
+        "--time-indices",
+        default=None,
+        help="Comma-separated time indices or inclusive ranges, e.g. 0,1,2 or 0-24",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    build_flood_tiles(
+        slf_path=Path(args.slf).expanduser().resolve(),
+        output_root=Path(args.output).expanduser().resolve(),
+        min_z=args.min_z,
+        max_z=args.max_z,
+        time_indices=(
+            parse_time_indices(args.time_indices)
+            if args.time_indices is not None
+            else [args.time_index]
+        ),
+    )
+
+
+if __name__ == "__main__":
+    main()
