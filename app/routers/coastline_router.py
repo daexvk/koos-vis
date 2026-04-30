@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.auth import verify_api_key
+from app.schemas.coastline import FeatureCollectionResponse
 from app.services.cache_service import (
     get_coastline_path,
     get_coastline_simplified_path,
@@ -11,7 +12,11 @@ from app.services.cache_service import (
 router = APIRouter(prefix="/api", tags=["coastline"])
 
 
-@router.get("/coastline")
+@router.get(
+    "/coastline",
+    response_class=FileResponse,
+    responses={200: {"model": FeatureCollectionResponse}},
+)
 def get_coastline(
     _: None = Depends(verify_api_key),
 ):
@@ -27,7 +32,11 @@ def get_coastline(
     )
 
 
-@router.get("/coastline/{z}")
+@router.get(
+    "/coastline/{z}",
+    response_class=FileResponse,
+    responses={200: {"model": FeatureCollectionResponse}},
+)
 def get_coastline_by_zoom(
     z: int,
     _: None = Depends(verify_api_key),
@@ -44,7 +53,11 @@ def get_coastline_by_zoom(
     )
 
 
-@router.get("/coastline/{z}/{x}/{y}")
+@router.get(
+    "/coastline/{z}/{x}/{y}",
+    response_class=FileResponse,
+    responses={200: {"model": FeatureCollectionResponse}},
+)
 def get_coastline_tile(
     z: int,
     x: int,

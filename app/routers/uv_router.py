@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.auth import verify_api_key
+from app.schemas.connectivity import ConnectivityResponse
+from app.schemas.time import TimeListResponse
+from app.schemas.uv import UvTileResponse
 from app.services.cache_service import (
     get_uv_connectivity_path,
     get_uv_tile_path,
@@ -11,17 +14,21 @@ from app.services.cache_service import (
 router = APIRouter(prefix="/api", tags=["uv"])
 
 
-@router.get("/uv/times")
+@router.get("/uv/times", response_model=TimeListResponse)
 def get_uv_times(
     _: None = Depends(verify_api_key),
 ):
     result = read_uv_times()
     if result is None:
-        return JSONResponse(content={"time_indices": [], "times": []})
+        return {"time_indices": [], "times": []}
     return result
 
 
-@router.get("/uv/{time_index}/connectivity/{z}")
+@router.get(
+    "/uv/{time_index}/connectivity/{z}",
+    response_class=FileResponse,
+    responses={200: {"model": ConnectivityResponse}},
+)
 def get_uv_connectivity(
     time_index: int,
     z: int,
@@ -39,7 +46,11 @@ def get_uv_connectivity(
     )
 
 
-@router.get("/uv/connectivity/{z}")
+@router.get(
+    "/uv/connectivity/{z}",
+    response_class=FileResponse,
+    responses={200: {"model": ConnectivityResponse}},
+)
 def get_uv_connectivity_legacy(
     z: int,
     _: None = Depends(verify_api_key),
@@ -47,7 +58,11 @@ def get_uv_connectivity_legacy(
     return get_uv_connectivity(time_index=864, z=z, _=_)
 
 
-@router.get("/uv/{time_index}/{z}/{x}/{y}")
+@router.get(
+    "/uv/{time_index}/{z}/{x}/{y}",
+    response_class=FileResponse,
+    responses={200: {"model": UvTileResponse}},
+)
 def get_uv_tile(
     time_index: int,
     z: int,
@@ -76,7 +91,11 @@ def get_uv_tile(
     )
 
 
-@router.get("/uv/{z}/{x}/{y}")
+@router.get(
+    "/uv/{z}/{x}/{y}",
+    response_class=FileResponse,
+    responses={200: {"model": UvTileResponse}},
+)
 def get_uv_tile_legacy(
     z: int,
     x: int,
