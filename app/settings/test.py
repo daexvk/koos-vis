@@ -25,3 +25,5 @@ for name in ds.data_vars:
 print("\n=== MESH ===")
 print("ikle2:", ds.attrs["ikle2"][:5])
 print("ipobo:", ds.attrs["ipobo"][:10])
+
+print(ds.attrs["variables"])

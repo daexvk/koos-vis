@@ -1,9 +1,97 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.services.cache_service import read_tile, read_connectivity, get_coastline_path, get_coastline_topo_path, get_webp_tile_path
+from app.services.cache_service import read_tile, read_connectivity, get_coastline_path, get_coastline_simplified_path, get_coastline_tile_path, get_webp_tile_path,get_flood_tile_path, get_flood_connectivity_path, get_uv_tile_path, get_uv_connectivity_path
 from app.core.auth import verify_api_key
 from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter(prefix="/api", tags=["tiles"])
+
+@router.get("/flood/conns/{z}")
+def get_flood_connectivity(
+    z: int,
+    _: None = Depends(verify_api_key),
+):
+    path = get_flood_connectivity_path(z)
+
+    if path is None:
+        return JSONResponse(content={"triangles": []})
+
+    return FileResponse(
+        path=path,
+        media_type="application/json",
+        filename="connectivity.json",
+    )
+
+
+@router.get("/flood/{z}/{x}/{y}")
+def get_flood_tile(
+    z: int,
+    x: int,
+    y: int,
+    _: None = Depends(verify_api_key),
+):
+    path = get_flood_tile_path(z, x, y)
+
+    if path is None:
+        return JSONResponse(
+            content={
+                "z": z,
+                "x": x,
+                "y": y,
+                "time_index": 0,
+                "points": [],
+            }
+        )
+
+    return FileResponse(
+        path=path,
+        media_type="application/json",
+        filename=f"{y}.json",
+    )
+
+@router.get("/uv/connectivity/{z}")
+def get_uv_connectivity(
+    z: int,
+    _: None = Depends(verify_api_key),
+):
+    path = get_uv_connectivity_path(z)
+
+    if path is None:
+        return JSONResponse(content={"triangles": []})
+
+    return FileResponse(
+        path=path,
+        media_type="application/json",
+        filename="connectivity.json",
+    )
+
+
+@router.get("/uv/{z}/{x}/{y}")
+def get_uv_tile(
+    z: int,
+    x: int,
+    y: int,
+    _: None = Depends(verify_api_key),
+):
+    path = get_uv_tile_path(z, x, y)
+
+    if path is None:
+        return JSONResponse(
+            content={
+                "z": z,
+                "x": x,
+                "y": y,
+                "time_index": 0,
+                "points": [],
+                "triangles": [],
+            }
+        )
+
+    return FileResponse(
+        path=path,
+        media_type="application/json",
+        filename=f"{y}.json",
+    )
+
 
 @router.get("/coastline")
 def get_coastline(
@@ -21,29 +109,45 @@ def get_coastline(
         filename="coastline.json",
     )
 
+@router.get("/coastline/{z}")
+def get_coastline_by_zoom(
+    z: int,
+    _: None = Depends(verify_api_key),
+):
+    path = get_coastline_simplified_path(z)
+
+    if path is None:
+        raise HTTPException(status_code=404, detail="coastline not found")
+
+    return FileResponse(
+        path=str(path),
+        media_type="application/json",
+        filename=f"coastline_{z}.geojson",
+    )
+
+
 @router.get("/coastline/{z}/{x}/{y}")
-def get_coastline(
+def get_coastline_tile(
     z: int,
     x: int,
     y: int,
     _: None = Depends(verify_api_key),
 ):
-    path = get_coastline_topo_path(z, x, y)
+    path = get_coastline_tile_path(z, x, y)
 
     if path is None:
         return JSONResponse(
             status_code=200,
             content={
-                "type": "Topology",
-                "objects": {},
-                "arcs": [],
+                "type": "FeatureCollection",
+                "features": [],
             },
         )
 
     return FileResponse(
         path=str(path),
         media_type="application/json",
-        filename=f"{z}_{x}_{y}.topojson",
+        filename=f"{z}_{x}_{y}.geojson",
     )
 
 @router.get("/map/{z}/{x}/{y}")
