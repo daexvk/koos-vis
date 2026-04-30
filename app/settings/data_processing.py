@@ -25,7 +25,7 @@ def process_zoom_level(
     """특정 줌 레벨에 대해 coarsen(optional) + 서브셋 + 타일 저장을 수행한다."""
     ds0 = ds.isel(time=0)
     lon, lat = ds0.coords["x"].values, ds0.coords["y"].values
-    h, s = ds0["H"].values, ds0["S"].values
+    h = ds0["H"].values
 
     ikle2 = np.array(ds.attrs["ikle2"])
     if ikle2.min() >= 1:
@@ -35,12 +35,12 @@ def process_zoom_level(
         ipobo = np.array(ds.attrs["ipobo"])
         keep_mask, simplices = stride_coarsen_mesh(ikle2, lon, lat, ipobo, stride)
         keep_idx = np.where(keep_mask)[0]
-        lon_k, lat_k, h_k, s_k = lon[keep_idx], lat[keep_idx], h[keep_idx], s[keep_idx]
+        lon_k, lat_k, h_k = lon[keep_idx], lat[keep_idx], h[keep_idx]
         print(f"z{zoom} stride coarsen: {len(keep_idx)} nodes, {len(simplices)} triangles")
-        buckets = bucket_nodes(lon_k, lat_k, h_k, s_k, zoom, target_tiles, indices=keep_idx)
+        buckets = bucket_nodes(lon_k, lat_k, h_k, zoom, target_tiles, indices=keep_idx)
     else:
         simplices = ikle2
-        buckets = bucket_nodes(lon, lat, h, s, zoom, target_tiles)
+        buckets = bucket_nodes(lon, lat, h, zoom, target_tiles)
 
     if target_tiles is not None and stride is None:
         node_mask = np.zeros(len(lon), dtype=bool)
@@ -57,7 +57,7 @@ def process_zoom_level(
 
 
 def main() -> None:
-    STRIDE = 5
+    STRIDE = 10
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
 
     ds = xr.open_dataset(DATA_FILE, engine="selafin")

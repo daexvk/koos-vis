@@ -41,7 +41,6 @@ def bucket_nodes(
     lon: np.ndarray,
     lat: np.ndarray,
     h: np.ndarray,
-    s: np.ndarray,
     z: int,
     target_tiles: set[tuple[int, int]] | None = None,
     indices: np.ndarray | None = None,
@@ -62,7 +61,6 @@ def bucket_nodes(
             "lat": float(lat[i]),
             "lon": float(lon[i]),
             "h": float(h[i]),
-            "ssh": float(s[i]),
         })
 
     return buckets
@@ -110,7 +108,7 @@ def save_meta(
         "point_count": point_count,
         "triangle_count": triangle_count,
         "tile_count": tile_count,
-        "fields": ["idx", "lat", "lon", "h", "ssh"],
+        "fields": ["idx", "lat", "lon", "h"],
     }
     with open(cache_root / "meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
