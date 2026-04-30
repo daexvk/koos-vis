@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.auth import verify_api_key
+from app.schemas.connectivity import ConnectivityResponse
+from app.schemas.flood import FloodTileResponse
+from app.schemas.time import TimeListResponse
 from app.services.cache_service import (
     get_flood_connectivity_path,
     get_flood_tile_path,
@@ -11,17 +14,21 @@ from app.services.cache_service import (
 router = APIRouter(prefix="/api", tags=["flood"])
 
 
-@router.get("/flood/times")
+@router.get("/flood/times", response_model=TimeListResponse)
 def get_flood_times(
     _: None = Depends(verify_api_key),
 ):
     result = read_flood_times()
     if result is None:
-        return JSONResponse(content={"time_indices": [], "times": []})
+        return {"time_indices": [], "times": []}
     return result
 
 
-@router.get("/flood/{time_index}/conns/{z}")
+@router.get(
+    "/flood/{time_index}/conns/{z}",
+    response_class=FileResponse,
+    responses={200: {"model": ConnectivityResponse}},
+)
 def get_flood_connectivity(
     time_index: int,
     z: int,
@@ -39,7 +46,11 @@ def get_flood_connectivity(
     )
 
 
-@router.get("/flood/conns/{z}")
+@router.get(
+    "/flood/conns/{z}",
+    response_class=FileResponse,
+    responses={200: {"model": ConnectivityResponse}},
+)
 def get_flood_connectivity_legacy(
     z: int,
     _: None = Depends(verify_api_key),
@@ -47,7 +58,11 @@ def get_flood_connectivity_legacy(
     return get_flood_connectivity(time_index=0, z=z, _=_)
 
 
-@router.get("/flood/{time_index}/{z}/{x}/{y}")
+@router.get(
+    "/flood/{time_index}/{z}/{x}/{y}",
+    response_class=FileResponse,
+    responses={200: {"model": FloodTileResponse}},
+)
 def get_flood_tile(
     time_index: int,
     z: int,
@@ -75,7 +90,11 @@ def get_flood_tile(
     )
 
 
-@router.get("/flood/{z}/{x}/{y}")
+@router.get(
+    "/flood/{z}/{x}/{y}",
+    response_class=FileResponse,
+    responses={200: {"model": FloodTileResponse}},
+)
 def get_flood_tile_legacy(
     z: int,
     x: int,
