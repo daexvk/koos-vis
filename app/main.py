@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import tile_router
+from app.routers import coastline_router, flood_router, tile_router, uv_router
 
 app = FastAPI()
 
@@ -12,4 +12,7 @@ app.add_middleware(
     allow_headers=["*"],            # 모든 헤더 허용
 )
 
+app.include_router(flood_router.router)
+app.include_router(uv_router.router)
+app.include_router(coastline_router.router)
 app.include_router(tile_router.router)
