@@ -74,9 +74,10 @@ def extract_lines(geom):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--input", default=str(Path.home() / "data" / "coastline.json"))
+    data_root = Path(__file__).resolve().parents[2] / "data"
+    p.add_argument("--input", default=str(data_root / "coastline.json"))
     p.add_argument(
-        "--output", default=str(Path.home() / "data" / "coastline_clean.geojson")
+        "--output", default=str(data_root / "coastline_clean.geojson")
     )
     return p.parse_args()
 

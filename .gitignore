@@ -1,4 +1,7 @@
 /static
+data/
+coastline_preview.html
+app/settings/test_0513.py
 __pycache__/
 .env
 .venv

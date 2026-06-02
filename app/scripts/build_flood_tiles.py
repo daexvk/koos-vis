@@ -12,8 +12,9 @@ from app.settings.mesh_utils import subset_connectivity
 from app.settings.tile_utils import lonlat_to_xyz_tile
 
 
-SLF_PATH = Path.home() / "data" / "0314_surge_res_korea.slf"
-OUTPUT_ROOT = Path.home() / "data" / "flood_tiles"
+DATA_ROOT = Path(__file__).resolve().parents[2] / "data"
+SLF_PATH = DATA_ROOT / "0314_surge_res_korea.slf"
+OUTPUT_ROOT = DATA_ROOT / "flood_tiles"
 
 
 def parse_time_indices(value: str) -> list[int]:

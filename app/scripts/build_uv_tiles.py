@@ -11,7 +11,7 @@ import xarray as xr
 from app.settings.tile_utils import lonlat_to_xyz_tile
 
 
-DATA_FILE = Path.home() / "data" / "0314_surge_res_korea.slf"
+DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "0314_surge_res_korea.slf"
 CACHE_ROOT = DATA_FILE.parent / "tiles_uv"
 
 MIN_ZOOM = 6

@@ -22,7 +22,8 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SLF_PATH="$1"
-DATA_ROOT="${2:-$HOME/data}"
+DATA_ROOT="${2:-$ROOT_DIR/data}"
+umask 022
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 CONDA_ENV="${CONDA_ENV:-}"

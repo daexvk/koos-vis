@@ -4,24 +4,22 @@ from fastapi.responses import FileResponse, JSONResponse
 from app.core.auth import verify_api_key
 from app.schemas.connectivity import ConnectivityResponse
 from app.schemas.flood import FloodTileResponse
-from app.schemas.time import TimeListResponse
 from app.services.cache_service import (
     get_flood_connectivity_path,
     get_flood_tile_path,
-    read_flood_times,
 )
 
 router = APIRouter(prefix="/api", tags=["flood"])
 
 
-@router.get("/flood/times", response_model=TimeListResponse)
-def get_flood_times(
-    _: None = Depends(verify_api_key),
-):
-    result = read_flood_times()
-    if result is None:
-        return {"time_indices": [], "times": []}
-    return result
+# @router.get("/flood/times", response_model=TimeListResponse)
+# def get_flood_times(
+#     _: None = Depends(verify_api_key),
+# ):
+#     result = read_flood_times()
+#     if result is None:
+#         return {"time_indices": [], "times": []}
+#     return result
 
 
 @router.get(

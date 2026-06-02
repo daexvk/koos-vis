@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument("--input", required=True, help="GeoJSON input path")
     parser.add_argument(
         "--output",
-        default=str(Path.home() / "data" / "coastline_tiles"),
+        default=str(Path(__file__).resolve().parents[2] / "data" / "coastline_tiles"),
         help="Output root directory",
     )
     parser.add_argument("--min-z", type=int, default=5)
