@@ -1,7 +1,7 @@
 import xarray as xr
 from pathlib import Path
 
-fp = Path.home() / "data" / "0314_surge_res_korea.slf"
+fp = Path(__file__).resolve().parents[2] / "data" / "0314_surge_res_korea.slf"
 ds = xr.open_dataset(fp, engine="selafin")
 
 print("=== DATASET ===")

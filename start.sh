@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-exec /home1/ncloud/miniconda3/bin/conda run -n fastapi --no-capture-output \
+exec /Users/koos/miniconda3/bin/conda run -n koosback --no-capture-output \
     gunicorn app.main:app \
     --workers 4 \
     --worker-class uvicorn.workers.UvicornWorker \

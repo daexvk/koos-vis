@@ -13,3 +13,5 @@ shapely
 mercantile
 fiona
 pyproj
+gunicorn
+rich

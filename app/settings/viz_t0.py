@@ -13,7 +13,7 @@ from app.settings.data_processing import DATA_FILE
 BUSAN_LON_MIN, BUSAN_LON_MAX = 128.7, 129.4
 BUSAN_LAT_MIN, BUSAN_LAT_MAX = 34.7, 35.4
 
-COASTLINE_PATH = Path.home() / "data" / "coastline_clean.geojson"
+COASTLINE_PATH = Path(__file__).resolve().parents[2] / "data" / "coastline_clean.geojson"
 
 
 def main() -> None:

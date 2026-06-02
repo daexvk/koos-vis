@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from collections import defaultdict
 from pathlib import Path
 
@@ -24,7 +25,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--input",
-        default=str(Path.home() / "data" / "coastline.json"),
+        default=str(Path(__file__).resolve().parents[2] / "data" / "coastline.json"),
         help="GeoJSON input path (z=8/10/12 source)",
     )
     parser.add_argument(
@@ -35,12 +36,12 @@ def parse_args():
     )
     parser.add_argument(
         "--output",
-        default=str(Path.home() / "data" / "coastline"),
+        default=str(Path(__file__).resolve().parents[2] / "data" / "coastline"),
         help="Output root for per-zoom simplified GeoJSON",
     )
     parser.add_argument(
         "--tile-output",
-        default=str(Path.home() / "data" / "coastline_tiles"),
+        default=str(Path(__file__).resolve().parents[2] / "data" / "coastline_tiles"),
         help="Output root for slippy-map tile GeoJSON ({z}/{x}/{y}.geojson)",
     )
     return parser.parse_args()
@@ -185,16 +186,35 @@ def tile_polygon(z: int, x: int, y: int):
     return box(b.west, b.south, b.east, b.north)
 
 
+def to_line_geometry(geom):
+    # 타일 경계로 클립할 때 폴리곤이면 잘린 면을 타일 변을 따라 닫아버린다.
+    # stroke 렌더링에서 이 인공 경계변이 격자선처럼 보이므로, 외곽선을
+    # LineString으로 바꿔 클립하면 타일 경계에서 그냥 끊긴다.
+    if geom.geom_type in ("Polygon", "MultiPolygon"):
+        return geom.boundary
+    return geom
+
+
 def build_tiles_for_zoom(
     gdf: gpd.GeoDataFrame,
     z: int,
     tile_output_root: Path,
 ) -> int:
+    # 이전 실행에서 남은 타일을 제거한다. 그러지 않으면 더 이상 feature가
+    # 없는 타일(예: 완전 내륙 타일)의 옛 파일이 덮어쓰이지 않고 남는다.
+    zoom_dir = tile_output_root / str(z)
+    if zoom_dir.exists():
+        shutil.rmtree(zoom_dir)
+
     tile_buckets: dict[tuple[int, int], list] = defaultdict(list)
 
     for _, row in gdf.iterrows():
         geom = row.geometry
         if geom is None or geom.is_empty:
+            continue
+
+        geom = to_line_geometry(geom)
+        if geom.is_empty:
             continue
 
         minx, miny, maxx, maxy = geom.bounds
@@ -226,17 +246,33 @@ def build_tiles_for_zoom(
                 }
             )
 
-    for (tx, ty), features in tile_buckets.items():
-        tile_dir = tile_output_root / str(z) / str(tx)
+    # 데이터 전체 bbox가 덮는 모든 타일을 대상으로 한다. feature가 없는
+    # 타일(바다 등)도 파일을 써서 클라이언트가 404 없이 모든 좌표에서
+    # 타일을 받도록 한다. 단 features 를 빈 배열로 두면 클라이언트가
+    # 에러를 내므로, 빈 Polygon feature 하나를 넣어 채운다.
+    minx, miny, maxx, maxy = gdf.total_bounds
+    all_tiles = list(mercantile.tiles(minx, miny, maxx, maxy, [z]))
+
+    for tile in all_tiles:
+        features = tile_buckets.get((tile.x, tile.y))
+        if not features:
+            features = [
+                {
+                    "type": "Feature",
+                    "properties": {},
+                    "geometry": {"type": "LineString", "coordinates": []},
+                }
+            ]
+        tile_dir = tile_output_root / str(z) / str(tile.x)
         tile_dir.mkdir(parents=True, exist_ok=True)
-        with open(tile_dir / f"{ty}.geojson", "w", encoding="utf-8") as f:
+        with open(tile_dir / f"{tile.y}.geojson", "w", encoding="utf-8") as f:
             json.dump(
                 {"type": "FeatureCollection", "features": features},
                 f,
                 ensure_ascii=False,
             )
 
-    return len(tile_buckets)
+    return len(all_tiles)
 
 
 def main():

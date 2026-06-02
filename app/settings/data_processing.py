@@ -11,7 +11,7 @@ from app.settings.tile_utils import (
 from app.settings.mesh_utils import stride_coarsen_mesh, subset_connectivity
 
 
-DATA_FILE = Path.home() / "data" / "0314_surge_res_korea.slf"
+DATA_FILE = Path(__file__).resolve().parents[2] / "data" / "0314_surge_res_korea.slf"
 CACHE_ROOT = DATA_FILE.parent / "tiles"
 
 def process_zoom_level(
