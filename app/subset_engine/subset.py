@@ -41,6 +41,7 @@ DEFAULT_LAYERS: dict[str, dict[str, list[str]]] = {
 WORKERS = 8
 _MESH_INDEX_CACHE: dict[tuple[str, str, int], dict[tuple[int, int], dict]] = {}
 VALUE_COMPLETE_MARKER = ".complete.json"
+MESH_FORMAT_VERSION = 2
 
 
 class FilenameParts(NamedTuple):
@@ -79,7 +80,8 @@ def _compute_mesh_tiles(
     x = np.asarray(header["x"])
     y = np.asarray(header["y"])
     triangles = header["ikle"].astype(np.int64) - 1
-    return {z: bucket_mesh_by_tile(x, y, triangles, z) for z in zooms}
+    ipobo = np.asarray(header["ipobo"])
+    return {z: bucket_mesh_by_tile(x, y, triangles, z, ipobo) for z in zooms}
 
 
 def _mesh_index_path(
@@ -158,6 +160,31 @@ def _load_mesh_indices(
     }
 
 
+def _mesh_complete_path(mesh_root: Path, z: int) -> Path:
+    return mesh_root / str(z) / ".complete"
+
+
+def _mesh_outputs_current(mesh_root: Path, z: int, index_path: Path) -> bool:
+    complete_path = _mesh_complete_path(mesh_root, z)
+    if not complete_path.exists() or not index_path.exists():
+        return False
+
+    try:
+        with open(complete_path, "r", encoding="utf-8") as f:
+            marker = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    return marker.get("mesh_format_version") == MESH_FORMAT_VERSION
+
+
+def _write_mesh_complete_marker(mesh_root: Path, z: int) -> None:
+    complete_path = _mesh_complete_path(mesh_root, z)
+    with open(complete_path, "w", encoding="utf-8") as f:
+        json.dump({"mesh_format_version": MESH_FORMAT_VERSION}, f)
+    make_file_readable(complete_path)
+
+
 def tile_mesh_for_group(
     rep_file: Path | str,
     zooms: list[int],
@@ -175,21 +202,19 @@ def tile_mesh_for_group(
     pending = [
         z
         for z in zooms
-        if not (mesh_root / str(z) / ".complete").exists()
-        or not _mesh_index_path(sample_out, model_type, location, z).exists()
+        if not _mesh_outputs_current(
+            mesh_root,
+            z,
+            _mesh_index_path(sample_out, model_type, location, z),
+        )
     ]
     if not pending:
         return
     ensure_dir(mesh_root)
     mesh_tiles_per_zoom = _compute_mesh_tiles(rep_file, pending)
     for z, tiles in mesh_tiles_per_zoom.items():
-        if (mesh_root / str(z) / ".complete").exists():
-            _write_mesh_index_output(sample_out, model_type, location, z, tiles)
-            continue
         _write_mesh_outputs(mesh_root, sample_out, model_type, location, z, tiles)
-        complete_path = mesh_root / str(z) / ".complete"
-        complete_path.touch()
-        make_file_readable(complete_path)
+        _write_mesh_complete_marker(mesh_root, z)
 
 
 def subset_layer(
