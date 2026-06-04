@@ -4,7 +4,11 @@ from app.subset_engine.utils.coord import latlon_to_tile_vec
 
 
 def bucket_mesh_by_tile(
-    x: np.ndarray, y: np.ndarray, triangles: np.ndarray, zoom: int
+    x: np.ndarray,
+    y: np.ndarray,
+    triangles: np.ndarray,
+    zoom: int,
+    ipobo: np.ndarray | None = None,
 ) -> dict[tuple[int, int], dict]:
     """노드와 삼각형을 타일 단위로 그룹핑. value 배열과 무관하게 메쉬만 다룸.
 
@@ -16,6 +20,7 @@ def bucket_mesh_by_tile(
     x = np.asarray(x)
     y = np.asarray(y)
     triangles = np.asarray(triangles, dtype=np.int64)
+    ipobo_array = None if ipobo is None else np.asarray(ipobo)
 
     # 각 노드가 어느 타일에 속하는지 계산. (tx, ty)를 한 개의 정수 키로 인코딩.
     n = 1 << zoom
@@ -32,6 +37,11 @@ def bucket_mesh_by_tile(
             "y": y[node_idx],
             "node": node_idx,
             "conn": empty_conn,
+            "boundary_node": (
+                node_idx[ipobo_array[node_idx] != 0]
+                if ipobo_array is not None
+                else np.empty(0, dtype=node_idx.dtype)
+            ),
         }
 
     # 2) 삼각형 그룹핑: 한 삼각형이 K개 타일에 걸치면 K개 타일 모두의 conn에 포함.
