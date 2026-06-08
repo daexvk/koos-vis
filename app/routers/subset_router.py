@@ -8,8 +8,10 @@ from app.schemas.subset import (
     SubsetRunStatusResponse,
     SubsetTileIndexResponse,
 )
+from app.schemas.coastline import FeatureCollectionResponse
 from app.schemas.time import TimeListResponse
 from app.services.cache_service import (
+    get_subset_boundary_path,
     get_subset_mesh_tile_path,
     get_subset_value_tile_path_by_layer,
     get_subset_zoom_for_location,
@@ -34,6 +36,30 @@ def _file_response(path, y: int):
         path=path,
         media_type="application/octet-stream",
         filename=f"{y}.bin",
+    )
+
+
+@router.get(
+    "/boundary/{location}",
+    response_class=FileResponse,
+    responses={200: {"model": FeatureCollectionResponse}},
+)
+def get_subset_boundary(
+    location: str,
+    _: None = Depends(verify_api_key),
+):
+    try:
+        path = get_subset_boundary_path(location)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid location")
+
+    if path is None:
+        raise HTTPException(status_code=404, detail="boundary not found")
+
+    return FileResponse(
+        path=str(path),
+        media_type="application/json",
+        filename=f"{location}_boundary.geojson",
     )
 
 

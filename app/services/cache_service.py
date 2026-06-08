@@ -9,6 +9,7 @@ DATA_ROOT = Path(os.getenv("DATA_ROOT", str(APP_ROOT / "data")))
 CACHE_ROOT = DATA_ROOT / "tiles"
 SUBSET_INPUT_ROOT = Path(os.getenv("SUBSET_INPUT_ROOT", "/Volumes/T7/sample/NSTORM/DOUT"))
 SUBSET_ROOT = Path(os.getenv("SUBSET_ROOT", str(DATA_ROOT / "subset")))
+BOUNDARY_ROOT = Path(os.getenv("BOUNDARY_ROOT", str(SUBSET_ROOT.parent / "boundaries")))
 SUBSET_TRACK_ROOT = Path(
     os.getenv("SUBSET_TRACK_ROOT", str(SUBSET_INPUT_ROOT.parent / "DAIN" / "TRACK"))
 )
@@ -113,6 +114,13 @@ def get_subset_zoom_for_location(location: str):
         return SUBSET_KOREA_ZOOM
 
     return SUBSET_PORT_ZOOM
+
+
+def get_subset_boundary_path(location: str):
+    path = BOUNDARY_ROOT / _safe_path_part(location) / "boundary.geojson"
+    if not path.exists():
+        return None
+    return path
 
 
 def get_subset_value_tile_path(
