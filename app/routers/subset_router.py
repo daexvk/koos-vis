@@ -10,8 +10,9 @@ from app.schemas.subset import (
 )
 from app.schemas.time import TimeListResponse
 from app.services.cache_service import (
-    get_subset_mesh_tile_path_by_layer,
+    get_subset_mesh_tile_path,
     get_subset_value_tile_path_by_layer,
+    get_subset_zoom_for_location,
     read_subset_catalog,
     read_subset_tile_index,
     read_subset_times_by_layer,
@@ -116,26 +117,26 @@ def get_subset_times_by_layer(
 
 
 @router.get(
-    "/mesh/{location}/{layer}/{x}/{y}",
+    "/mesh/{location}/{x}/{y}",
     response_class=FileResponse,
     responses={
         200: {
             "content": {"application/octet-stream": {}},
-            "description": "Subset mesh tile binary. Uses z=6 for korea and z=11 for other locations.",
+            "description": "Subset mesh tile binary (shared across model types per location). Uses z=6 for korea and z=11 for other locations.",
         }
     },
 )
-def get_subset_mesh_tile_by_layer(
+def get_subset_mesh_tile(
     location: str,
-    layer: str,
     x: int,
     y: int,
     _: None = Depends(verify_api_key),
 ):
     try:
-        path = get_subset_mesh_tile_path_by_layer(
-            layer=layer,
+        z = get_subset_zoom_for_location(location)
+        path = get_subset_mesh_tile_path(
             location=location,
+            z=z,
             x=x,
             y=y,
         )

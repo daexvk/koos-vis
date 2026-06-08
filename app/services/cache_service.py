@@ -220,7 +220,6 @@ def get_subset_value_tile_path_by_layer(
 
 
 def get_subset_mesh_tile_path(
-    model_type: str,
     location: str,
     z: int,
     x: int,
@@ -229,7 +228,6 @@ def get_subset_mesh_tile_path(
     path = (
         SUBSET_ROOT
         / "mesh"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
         / str(z)
         / str(x)
@@ -242,35 +240,13 @@ def get_subset_mesh_tile_path(
     return path
 
 
-def get_subset_mesh_tile_path_by_layer(
-    layer: str,
-    location: str,
-    x: int,
-    y: int,
-):
-    model_type = get_subset_model_type_for_layer(layer=layer, location=location)
-    if model_type is None:
-        return None
-
-    z = get_subset_zoom_for_location(location)
-    return get_subset_mesh_tile_path(
-        model_type=model_type,
-        location=location,
-        z=z,
-        x=x,
-        y=y,
-    )
-
-
 def get_subset_mesh_index_path(
-    model_type: str,
     location: str,
     z: int,
 ):
     path = (
         SUBSET_ROOT
         / "mesh_index"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
         / f"{z}.npz"
     )
@@ -283,34 +259,18 @@ def get_subset_mesh_index_path(
 
 def read_subset_tile_index(location: str):
     z = get_subset_zoom_for_location(location)
-    model_type = None
-    for candidate_model_type in _list_subset_dirs(SUBSET_ROOT / "mesh_index"):
-        index_dir = (
-            SUBSET_ROOT
-            / "mesh_index"
-            / _safe_path_part(candidate_model_type)
-            / _safe_path_part(location)
-        )
-        if (index_dir / f"{z}.npz").exists():
-            model_type = candidate_model_type
-            break
-
-    if model_type is None:
-        return None
-
-    index_dir = (
+    index_path = (
         SUBSET_ROOT
         / "mesh_index"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
+        / f"{z}.npz"
     )
-    if not index_dir.exists():
+    if not index_path.exists():
         return None
 
     mesh_root = (
         SUBSET_ROOT
         / "mesh"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
         / str(z)
     )
@@ -558,16 +518,13 @@ def read_subset_metadata(
 
     mesh = {}
     mesh_root = SUBSET_ROOT / "mesh"
-    for model_type in _list_subset_dirs(mesh_root):
-        model_mesh = {}
-        for location in _list_subset_dirs(mesh_root / model_type):
-            zooms = [
-                int(value)
-                for value in _list_subset_dirs(mesh_root / model_type / location)
-                if value.isdigit()
-            ]
-            model_mesh[location] = {"zooms": sorted(zooms)}
-        mesh[model_type] = model_mesh
+    for location in _list_subset_dirs(mesh_root):
+        zooms = [
+            int(value)
+            for value in _list_subset_dirs(mesh_root / location)
+            if value.isdigit()
+        ]
+        mesh[location] = {"zooms": sorted(zooms)}
 
     return {
         "typhoon_ids": typhoon_ids,
