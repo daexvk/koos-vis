@@ -8,7 +8,7 @@ def bucket_mesh_by_tile(
     y: np.ndarray,
     triangles: np.ndarray,
     zoom: int,
-    ipobo: np.ndarray | None = None,
+    land_mask: np.ndarray | None = None,
 ) -> dict[tuple[int, int], dict]:
     """노드와 삼각형을 타일 단위로 그룹핑. value 배열과 무관하게 메쉬만 다룸.
 
@@ -16,11 +16,14 @@ def bucket_mesh_by_tile(
       - 노드는 자기 좌표가 떨어지는 타일 하나에만 속함.
       - 삼각형은 세 정점이 떨어지는 모든 타일의 conn에 들어감.
       - node/conn 모두 global node index (원본 x/y 배열의 인덱스).
+
+    land_mask가 주어지면(노드별 bool, 길이 npoin) 각 타일에 육지 노드(global index)를
+    land_nodes로 담는다.
     """
     x = np.asarray(x)
     y = np.asarray(y)
     triangles = np.asarray(triangles, dtype=np.int64)
-    ipobo_array = None if ipobo is None else np.asarray(ipobo)
+    land_mask_array = None if land_mask is None else np.asarray(land_mask)
 
     # 각 노드가 어느 타일에 속하는지 계산. (tx, ty)를 한 개의 정수 키로 인코딩.
     n = 1 << zoom
@@ -37,9 +40,9 @@ def bucket_mesh_by_tile(
             "y": y[node_idx],
             "node": node_idx,
             "conn": empty_conn,
-            "boundary_node": (
-                node_idx[ipobo_array[node_idx] != 0]
-                if ipobo_array is not None
+            "land_nodes": (
+                node_idx[land_mask_array[node_idx]]
+                if land_mask_array is not None
                 else np.empty(0, dtype=node_idx.dtype)
             ),
         }
