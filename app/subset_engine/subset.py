@@ -7,6 +7,7 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 
+from app.subset_engine.boundary import write_boundary_geojson
 from app.subset_engine.logger import (
     advance_file_progress,
     end_file_progress,
@@ -436,10 +437,19 @@ def _pretile_meshes(
         if parts.model_type == "surge":
             surge_by_location.setdefault(parts.location, p)
         rep_by_location.setdefault(parts.location, p)
+    boundaries_root = Path(sample_out).parent / "boundaries"
     for location, rep in rep_by_location.items():
         surge_file = surge_by_location.get(location)
         zooms = resolve_zooms(target_zooms, location)
-        tile_mesh_for_group(surge_file or rep, surge_file, zooms, sample_out, location)
+        rep_file = surge_file or rep
+        tile_mesh_for_group(rep_file, surge_file, zooms, sample_out, location)
+        if location.casefold() != "korea":
+            try:
+                write_boundary_geojson(
+                    rep_file, location, boundaries_root / location
+                )
+            except Exception as exc:  # 경계 추출 실패는 메쉬/값 생성을 막지 않음.
+                print(f"[boundary] {location}: failed — {exc}")
 
 
 def start_subset(
