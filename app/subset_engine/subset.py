@@ -78,10 +78,20 @@ def resolve_zooms(target_zooms: dict[str, list[int]], location: str) -> list[int
     return target_zooms.get(location, target_zooms["default"])
 
 
+# bottom = S - H = 0 인 경계(물가) 노드를 육지에 포함시키기 위한 허용 오차.
+# 2211_01_surge_res_busan 기준, bottom 의 시점별 부동소수점 노이즈는 최대 ~5.6e-16
+# (머신 엡실론 수준)인 반면 실제 지형상 0에 가장 가까운 노드의 |bottom| 은 ~1e-6 이상이다.
+# 따라서 노이즈(1e-16)보다 충분히 크고 실제 지형 간격(~1e-6)보다 작은 1e-9 로 잡으면
+# bottom == 0 노드만 안전하게 육지로 끌어오고 인접한 해저 노드는 건드리지 않는다.
+LAND_BOTTOM_EPSILON = 1e-9
+
+
 def _compute_land_mask(surge_path: Path | str | None, npoin: int) -> np.ndarray | None:
-    """SURGE 파일 timestep0에서 육지 마스크(bottom = S - H > 0)를 계산.
+    """SURGE 파일 timestep0에서 육지 마스크(bottom = S - H > -epsilon)를 계산.
 
     bottom = FREE SURFACE - WATER DEPTH 는 시간 불변인 해저고도이므로 timestep0만 읽으면 충분.
+    strict > 0 은 bottom 이 정확히 0인 물가 경계 노드를 놓치므로, LAND_BOTTOM_EPSILON 만큼
+    완화해 S - H 가 0(부동소수점 노이즈 포함)인 노드까지 육지에 포함한다.
     파일이 없거나 S/H가 없거나 노드 수가 안 맞으면 None.
     """
     if surge_path is None:
@@ -94,7 +104,7 @@ def _compute_land_mask(surge_path: Path | str | None, npoin: int) -> np.ndarray 
         return None
     if s.shape != h.shape or s.shape[0] != npoin:
         return None
-    return (s - h) > 0
+    return (s - h) > -LAND_BOTTOM_EPSILON
 
 
 def _compute_mesh_tiles(
