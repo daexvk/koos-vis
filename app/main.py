@@ -1,7 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from app.routers import coastline_router, subset_router, tile_router
+from app.routers import (
+    coastline_router,
+    subset_router,
+    tile_router,
+    timeseries_router,
+)
 
 # from app.routers import (
 #     coastline_router,
@@ -27,6 +32,7 @@ app.add_middleware(
 app.include_router(subset_router.router)
 app.include_router(coastline_router.router)
 app.include_router(tile_router.router)
+app.include_router(timeseries_router.router)
 # app.include_router(flood_router.router)
 # app.include_router(uv_router.router)
 # app.include_router(wave_router.router)

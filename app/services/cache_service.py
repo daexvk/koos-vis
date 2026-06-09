@@ -2,25 +2,30 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
-import os
 
-APP_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = Path(os.getenv("DATA_ROOT", str(APP_ROOT / "data")))
-CACHE_ROOT = DATA_ROOT / "tiles"
-SUBSET_INPUT_ROOT = Path(os.getenv("SUBSET_INPUT_ROOT", "/Volumes/T7/sample/NSTORM/DOUT"))
-SUBSET_ROOT = Path(os.getenv("SUBSET_ROOT", str(DATA_ROOT / "subset")))
-BOUNDARY_ROOT = Path(os.getenv("BOUNDARY_ROOT", str(SUBSET_ROOT.parent / "boundaries")))
-SUBSET_TRACK_ROOT = Path(
-    os.getenv("SUBSET_TRACK_ROOT", str(SUBSET_INPUT_ROOT.parent / "DAIN" / "TRACK"))
-)
-COASTLINE_TILE_ROOT = DATA_ROOT / "coastline_tiles"
-WEBP_ROOT = DATA_ROOT / "webp"
-FLOOD_ROOT = DATA_ROOT / "flood_tiles"
-UV_ROOT = DATA_ROOT / "tiles_uv"
-WAVE_ROOT = DATA_ROOT / "wave_tiles"
-FLOOD_TIME_ROOT = DATA_ROOT / "flood_tiles_time"
-UV_TIME_ROOT = DATA_ROOT / "tiles_uv_time"
-WAVE_TIME_ROOT = DATA_ROOT / "wave_tiles_time"
+from app.core.config import get_settings
+
+
+SETTINGS = get_settings()
+
+# Input paths point at the original external data, usually the T7 NSTORM folder.
+SUBSET_INPUT_ROOT = SETTINGS.paths.subset_input_root
+SUBSET_TRACK_ROOT = SETTINGS.paths.subset_track_root
+
+# Output paths point at generated project data. These defaults still map to ./data.
+DATA_ROOT = SETTINGS.paths.output_root
+CACHE_ROOT = SETTINGS.paths.tile_root
+SUBSET_ROOT = SETTINGS.paths.subset_output_root
+BOUNDARY_ROOT = SETTINGS.paths.boundary_root
+COASTLINE_ROOT = SETTINGS.paths.coastline_root
+COASTLINE_TILE_ROOT = SETTINGS.paths.coastline_tile_root
+WEBP_ROOT = SETTINGS.paths.webp_root
+FLOOD_ROOT = SETTINGS.paths.flood_root
+UV_ROOT = SETTINGS.paths.uv_root
+WAVE_ROOT = SETTINGS.paths.wave_root
+FLOOD_TIME_ROOT = SETTINGS.paths.flood_time_root
+UV_TIME_ROOT = SETTINGS.paths.uv_time_root
+WAVE_TIME_ROOT = SETTINGS.paths.wave_time_root
 SUBSET_LAYER_LABELS = {
     "height": "수위",
     "tidal_height": "조위",
@@ -39,16 +44,15 @@ SUBSET_KOREA_ZOOM = 6
 SUBSET_PORT_ZOOM = 11
 
 def get_coastline_path():
-    return DATA_ROOT / "coastline.json"
+    return SETTINGS.paths.coastline_json
     # return None
 
 def get_coastline_simplified_path(z: int):
-    COASTLINE_SIMPLIFIED_ROOT = DATA_ROOT / "coastline"
     COASTLINE_SIMPLIFIED_ZOOMS = (6, 8, 10, 12)
     if z not in COASTLINE_SIMPLIFIED_ZOOMS:
         return None
 
-    path = COASTLINE_SIMPLIFIED_ROOT / str(z) / "coastline.geojson"
+    path = COASTLINE_ROOT / str(z) / "coastline.geojson"
 
     if not path.exists():
         return None

@@ -7,13 +7,17 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
-import tempfile
 from uuid import uuid4
 
+from app.core.config import CONFIG_ENV_NAME, get_settings
 from app.services.cache_service import SUBSET_INPUT_ROOT, SUBSET_ROOT
 
 
-JOB_ROOT = Path(os.getenv("SUBSET_JOB_ROOT", tempfile.gettempdir())) / "koos_back_subset"
+SETTINGS = get_settings()
+
+# Runtime status/lock files for subset jobs. This is configurable because the
+# packaged Electron app may need a writable location outside the binary folder.
+JOB_ROOT = SETTINGS.paths.subset_job_root
 STATUS_PATH = JOB_ROOT / "status.json"
 LOCK_PATH = JOB_ROOT / "run.lock"
 
@@ -51,9 +55,9 @@ def start_subset_job() -> tuple[dict, bool]:
     try:
         proc = subprocess.Popen(
             [
-                sys.executable,
-                "-m",
-                "app.services.subset_worker",
+                *_backend_command(),
+                *(_config_args()),
+                "subset-worker",
                 "--job-id",
                 job_id,
                 "--input-root",
@@ -178,6 +182,19 @@ def _pid_alive(pid) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _config_args() -> list[str]:
+    config_path = os.getenv(CONFIG_ENV_NAME)
+    if not config_path:
+        config_path = str(SETTINGS.config_path) if SETTINGS.config_path is not None else None
+    return ["--config", config_path] if config_path else []
+
+
+def _backend_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    return [sys.executable, "-m", "app.cli"]
 
 
 def _utc_now() -> datetime:
