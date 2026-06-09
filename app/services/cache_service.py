@@ -2,24 +2,30 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
-import os
 
-APP_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = Path(os.getenv("DATA_ROOT", str(APP_ROOT / "data")))
-CACHE_ROOT = DATA_ROOT / "tiles"
-SUBSET_INPUT_ROOT = Path(os.getenv("SUBSET_INPUT_ROOT", "/Volumes/T7/sample/NSTORM/DOUT"))
-SUBSET_ROOT = Path(os.getenv("SUBSET_ROOT", str(DATA_ROOT / "subset")))
-SUBSET_TRACK_ROOT = Path(
-    os.getenv("SUBSET_TRACK_ROOT", str(SUBSET_INPUT_ROOT.parent / "DAIN" / "TRACK"))
-)
-COASTLINE_TILE_ROOT = DATA_ROOT / "coastline_tiles"
-WEBP_ROOT = DATA_ROOT / "webp"
-FLOOD_ROOT = DATA_ROOT / "flood_tiles"
-UV_ROOT = DATA_ROOT / "tiles_uv"
-WAVE_ROOT = DATA_ROOT / "wave_tiles"
-FLOOD_TIME_ROOT = DATA_ROOT / "flood_tiles_time"
-UV_TIME_ROOT = DATA_ROOT / "tiles_uv_time"
-WAVE_TIME_ROOT = DATA_ROOT / "wave_tiles_time"
+from app.core.config import get_settings
+
+
+SETTINGS = get_settings()
+
+# Input paths point at the original external data, usually the T7 NSTORM folder.
+SUBSET_INPUT_ROOT = SETTINGS.paths.subset_input_root
+SUBSET_TRACK_ROOT = SETTINGS.paths.subset_track_root
+
+# Output paths point at generated project data. These defaults still map to ./data.
+DATA_ROOT = SETTINGS.paths.output_root
+CACHE_ROOT = SETTINGS.paths.tile_root
+SUBSET_ROOT = SETTINGS.paths.subset_output_root
+BOUNDARY_ROOT = SETTINGS.paths.boundary_root
+COASTLINE_ROOT = SETTINGS.paths.coastline_root
+COASTLINE_TILE_ROOT = SETTINGS.paths.coastline_tile_root
+WEBP_ROOT = SETTINGS.paths.webp_root
+FLOOD_ROOT = SETTINGS.paths.flood_root
+UV_ROOT = SETTINGS.paths.uv_root
+WAVE_ROOT = SETTINGS.paths.wave_root
+FLOOD_TIME_ROOT = SETTINGS.paths.flood_time_root
+UV_TIME_ROOT = SETTINGS.paths.uv_time_root
+WAVE_TIME_ROOT = SETTINGS.paths.wave_time_root
 SUBSET_LAYER_LABELS = {
     "height": "수위",
     "tidal_height": "조위",
@@ -38,16 +44,15 @@ SUBSET_KOREA_ZOOM = 6
 SUBSET_PORT_ZOOM = 11
 
 def get_coastline_path():
-    return DATA_ROOT / "coastline.json"
+    return SETTINGS.paths.coastline_json
     # return None
 
 def get_coastline_simplified_path(z: int):
-    COASTLINE_SIMPLIFIED_ROOT = DATA_ROOT / "coastline"
     COASTLINE_SIMPLIFIED_ZOOMS = (6, 8, 10, 12)
     if z not in COASTLINE_SIMPLIFIED_ZOOMS:
         return None
 
-    path = COASTLINE_SIMPLIFIED_ROOT / str(z) / "coastline.geojson"
+    path = COASTLINE_ROOT / str(z) / "coastline.geojson"
 
     if not path.exists():
         return None
@@ -113,6 +118,13 @@ def get_subset_zoom_for_location(location: str):
         return SUBSET_KOREA_ZOOM
 
     return SUBSET_PORT_ZOOM
+
+
+def get_subset_boundary_path(location: str):
+    path = BOUNDARY_ROOT / _safe_path_part(location) / "boundary.geojson"
+    if not path.exists():
+        return None
+    return path
 
 
 def get_subset_value_tile_path(
@@ -220,7 +232,6 @@ def get_subset_value_tile_path_by_layer(
 
 
 def get_subset_mesh_tile_path(
-    model_type: str,
     location: str,
     z: int,
     x: int,
@@ -229,7 +240,6 @@ def get_subset_mesh_tile_path(
     path = (
         SUBSET_ROOT
         / "mesh"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
         / str(z)
         / str(x)
@@ -242,35 +252,13 @@ def get_subset_mesh_tile_path(
     return path
 
 
-def get_subset_mesh_tile_path_by_layer(
-    layer: str,
-    location: str,
-    x: int,
-    y: int,
-):
-    model_type = get_subset_model_type_for_layer(layer=layer, location=location)
-    if model_type is None:
-        return None
-
-    z = get_subset_zoom_for_location(location)
-    return get_subset_mesh_tile_path(
-        model_type=model_type,
-        location=location,
-        z=z,
-        x=x,
-        y=y,
-    )
-
-
 def get_subset_mesh_index_path(
-    model_type: str,
     location: str,
     z: int,
 ):
     path = (
         SUBSET_ROOT
         / "mesh_index"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
         / f"{z}.npz"
     )
@@ -283,34 +271,18 @@ def get_subset_mesh_index_path(
 
 def read_subset_tile_index(location: str):
     z = get_subset_zoom_for_location(location)
-    model_type = None
-    for candidate_model_type in _list_subset_dirs(SUBSET_ROOT / "mesh_index"):
-        index_dir = (
-            SUBSET_ROOT
-            / "mesh_index"
-            / _safe_path_part(candidate_model_type)
-            / _safe_path_part(location)
-        )
-        if (index_dir / f"{z}.npz").exists():
-            model_type = candidate_model_type
-            break
-
-    if model_type is None:
-        return None
-
-    index_dir = (
+    index_path = (
         SUBSET_ROOT
         / "mesh_index"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
+        / f"{z}.npz"
     )
-    if not index_dir.exists():
+    if not index_path.exists():
         return None
 
     mesh_root = (
         SUBSET_ROOT
         / "mesh"
-        / _safe_path_part(model_type)
         / _safe_path_part(location)
         / str(z)
     )
@@ -558,16 +530,13 @@ def read_subset_metadata(
 
     mesh = {}
     mesh_root = SUBSET_ROOT / "mesh"
-    for model_type in _list_subset_dirs(mesh_root):
-        model_mesh = {}
-        for location in _list_subset_dirs(mesh_root / model_type):
-            zooms = [
-                int(value)
-                for value in _list_subset_dirs(mesh_root / model_type / location)
-                if value.isdigit()
-            ]
-            model_mesh[location] = {"zooms": sorted(zooms)}
-        mesh[model_type] = model_mesh
+    for location in _list_subset_dirs(mesh_root):
+        zooms = [
+            int(value)
+            for value in _list_subset_dirs(mesh_root / location)
+            if value.isdigit()
+        ]
+        mesh[location] = {"zooms": sorted(zooms)}
 
     return {
         "typhoon_ids": typhoon_ids,

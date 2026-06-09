@@ -1,0 +1,35 @@
+{
+  "_description": "Editable backend config. JSON does not support comments, so _description fields document each path.",
+  "server": {
+    "_description": "Electron starts the backend on this localhost API address.",
+    "host": "127.0.0.1",
+    "port": 8197,
+    "workers": 1
+  },
+  "paths": {
+    "_description": "input_root is the external source data root, usually the T7 NSTORM folder. output_root is the generated backend data root, currently this project's data folder.",
+    "input_root": "/Volumes/T7/sample/NSTORM",
+    "output_root": "../data",
+
+    "_input_paths": "Source/input paths. Relative values are resolved under input_root.",
+    "subset_input_root": "DOUT",
+    "timeseries_root": "POST",
+    "subset_track_root": "DAIN/TRACK",
+
+    "_output_paths": "Generated/output paths. Relative values are resolved under output_root.",
+    "subset_output_root": "subset",
+    "boundary_root": "boundaries",
+    "subset_job_root": "runtime/subset_jobs",
+    "tile_root": "tiles",
+    "coastline_root": "coastline",
+    "coastline_tile_root": "coastline_tiles",
+    "webp_root": "webp",
+    "flood_root": "flood_tiles",
+    "uv_root": "tiles_uv",
+    "wave_root": "wave_tiles",
+    "flood_time_root": "flood_tiles_time",
+    "uv_time_root": "tiles_uv_time",
+    "wave_time_root": "wave_tiles_time",
+    "coastline_json": "coastline.json"
+  }
+}

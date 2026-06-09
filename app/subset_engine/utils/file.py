@@ -51,7 +51,7 @@ def write_mesh_tile_bin(path: str | Path, tile: dict) -> None:
     y = np.asarray(tile["y"], dtype=np.float32)
     node = np.asarray(tile["node"], dtype=np.int32)
     conn = np.asarray(tile["conn"], dtype=np.int32).ravel()
-    boundary_node = np.asarray(tile.get("boundary_node", []), dtype=np.int32)
+    land_nodes = np.asarray(tile.get("land_nodes", []), dtype=np.int32)
 
     with open(path, "wb") as f:
         np.array([len(node), len(conn)], dtype=np.int32).tofile(f)
@@ -59,8 +59,8 @@ def write_mesh_tile_bin(path: str | Path, tile: dict) -> None:
         y.tofile(f)
         node.tofile(f)
         conn.tofile(f)
-        np.array([len(boundary_node)], dtype=np.int32).tofile(f)
-        boundary_node.tofile(f)
+        np.array([len(land_nodes)], dtype=np.int32).tofile(f)
+        land_nodes.tofile(f)
     make_file_readable(path)
 
 

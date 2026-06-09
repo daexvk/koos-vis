@@ -7,6 +7,7 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 
+from app.subset_engine.boundary import write_boundary_geojson
 from app.subset_engine.logger import (
     advance_file_progress,
     end_file_progress,
@@ -14,7 +15,12 @@ from app.subset_engine.logger import (
     start_file_progress,
 )
 from app.subset_engine.utils.tile import bucket_mesh_by_tile, bucket_values_by_tile
-from app.subset_engine.utils.parser import read_header, read_timestep_at, step_bytes
+from app.subset_engine.utils.parser import (
+    read_header,
+    read_timestep,
+    read_timestep_at,
+    step_bytes,
+)
 from app.subset_engine.utils.time import get_hourly_indicies
 from app.subset_engine.utils.file import (
     ensure_dir,
@@ -39,9 +45,9 @@ DEFAULT_LAYERS: dict[str, dict[str, list[str]]] = {
 }
 
 WORKERS = 8
-_MESH_INDEX_CACHE: dict[tuple[str, str, int], dict[tuple[int, int], dict]] = {}
+_MESH_INDEX_CACHE: dict[tuple[str, int], dict[tuple[int, int], dict]] = {}
 VALUE_COMPLETE_MARKER = ".complete.json"
-MESH_FORMAT_VERSION = 2
+MESH_FORMAT_VERSION = 3
 
 
 class FilenameParts(NamedTuple):
@@ -72,31 +78,58 @@ def resolve_zooms(target_zooms: dict[str, list[int]], location: str) -> list[int
     return target_zooms.get(location, target_zooms["default"])
 
 
+# bottom = S - H = 0 인 경계(물가) 노드를 육지에 포함시키기 위한 허용 오차.
+# 2211_01_surge_res_busan 기준, bottom 의 시점별 부동소수점 노이즈는 최대 ~5.6e-16
+# (머신 엡실론 수준)인 반면 실제 지형상 0에 가장 가까운 노드의 |bottom| 은 ~1e-6 이상이다.
+# 따라서 노이즈(1e-16)보다 충분히 크고 실제 지형 간격(~1e-6)보다 작은 1e-9 로 잡으면
+# bottom == 0 노드만 안전하게 육지로 끌어오고 인접한 해저 노드는 건드리지 않는다.
+LAND_BOTTOM_EPSILON = 1e-9
+
+
+def _compute_land_mask(surge_path: Path | str | None, npoin: int) -> np.ndarray | None:
+    """SURGE 파일 timestep0에서 육지 마스크(bottom = S - H > -epsilon)를 계산.
+
+    bottom = FREE SURFACE - WATER DEPTH 는 시간 불변인 해저고도이므로 timestep0만 읽으면 충분.
+    strict > 0 은 bottom 이 정확히 0인 물가 경계 노드를 놓치므로, LAND_BOTTOM_EPSILON 만큼
+    완화해 S - H 가 0(부동소수점 노이즈 포함)인 노드까지 육지에 포함한다.
+    파일이 없거나 S/H가 없거나 노드 수가 안 맞으면 None.
+    """
+    if surge_path is None:
+        return None
+    try:
+        ds = read_timestep(surge_path, 0)["ds"]
+        s = np.asarray(ds["S"])
+        h = np.asarray(ds["H"])
+    except (KeyError, OSError, ValueError, IndexError):
+        return None
+    if s.shape != h.shape or s.shape[0] != npoin:
+        return None
+    return (s - h) > -LAND_BOTTOM_EPSILON
+
+
 def _compute_mesh_tiles(
-    filepath: Path | str, zooms: list[int]
+    filepath: Path | str, zooms: list[int], surge_file: Path | str | None
 ) -> dict[int, dict[tuple[int, int], dict]]:
     with open(filepath, "rb") as f:
         header = read_header(f)
     x = np.asarray(header["x"])
     y = np.asarray(header["y"])
     triangles = header["ikle"].astype(np.int64) - 1
-    ipobo = np.asarray(header["ipobo"])
-    return {z: bucket_mesh_by_tile(x, y, triangles, z, ipobo) for z in zooms}
+    land_mask = _compute_land_mask(surge_file, header["npoin"])
+    return {z: bucket_mesh_by_tile(x, y, triangles, z, land_mask) for z in zooms}
 
 
 def _mesh_index_path(
     sample_out: str | Path,
-    model_type: str,
     location: str,
     zoom: int,
 ) -> Path:
-    return Path(sample_out) / "mesh_index" / model_type / location / f"{zoom}.npz"
+    return Path(sample_out) / "mesh_index" / location / f"{zoom}.npz"
 
 
 def _write_mesh_outputs(
     mesh_root: Path,
     index_root: str | Path,
-    model_type: str,
     location: str,
     z: int,
     tiles: dict[tuple[int, int], dict],
@@ -110,36 +143,22 @@ def _write_mesh_outputs(
         write_mesh_tile_bin(os.path.join(tile_dir, f"{ty}.bin"), tile)
 
     write_mesh_index_npz(
-        _mesh_index_path(index_root, model_type, location, z),
-        tiles,
-    )
-
-
-def _write_mesh_index_output(
-    index_root: str | Path,
-    model_type: str,
-    location: str,
-    z: int,
-    tiles: dict[tuple[int, int], dict],
-) -> None:
-    write_mesh_index_npz(
-        _mesh_index_path(index_root, model_type, location, z),
+        _mesh_index_path(index_root, location, z),
         tiles,
     )
 
 
 def _load_mesh_index(
     sample_out: str | Path,
-    model_type: str,
     location: str,
     zoom: int,
 ) -> dict[tuple[int, int], dict]:
-    key = (model_type, location, zoom)
+    key = (location, zoom)
     cached = _MESH_INDEX_CACHE.get(key)
     if cached is not None:
         return cached
 
-    path = _mesh_index_path(sample_out, model_type, location, zoom)
+    path = _mesh_index_path(sample_out, location, zoom)
     if not path.exists():
         raise FileNotFoundError(f"mesh index not found: {path}")
 
@@ -150,12 +169,11 @@ def _load_mesh_index(
 
 def _load_mesh_indices(
     sample_out: str | Path,
-    model_type: str,
     location: str,
     zooms: list[int],
 ) -> dict[int, dict[tuple[int, int], dict]]:
     return {
-        z: _load_mesh_index(sample_out, model_type, location, z)
+        z: _load_mesh_index(sample_out, location, z)
         for z in zooms
     }
 
@@ -187,33 +205,36 @@ def _write_mesh_complete_marker(mesh_root: Path, z: int) -> None:
 
 def tile_mesh_for_group(
     rep_file: Path | str,
+    surge_file: Path | str | None,
     zooms: list[int],
     sample_out: str | Path,
-    model_type: str,
     location: str,
 ) -> None:
-    """대표 .slf 한 파일에서 메쉬를 zoom별로 타일링해 sample_out/mesh/.../에 저장.
+    """대표 .slf 한 파일에서 메쉬를 zoom별로 타일링해 sample_out/mesh/{location}/에 저장.
+
+    SURGE/WAVE 메쉬가 동일하므로 location당 1벌만 저장한다. 육지 마스크(land_nodes)는
+    surge_file(같은 location의 SURGE)에서 계산해 함께 담는다.
 
     각 zoom 디렉토리에 .complete 마커 파일이 있는 경우 그 zoom은 건너뜀.
     마커는 모든 타일을 다 쓴 뒤 마지막에 생성해 부분 실패 시 재실행으로 복구 가능.
-    같은 계산 결과에서 값 서브세팅용 mesh_index/.../{zoom}.npz도 함께 저장한다.
+    같은 계산 결과에서 값 서브세팅용 mesh_index/{location}/{zoom}.npz도 함께 저장한다.
     """
-    mesh_root = Path(sample_out) / "mesh" / model_type / location
+    mesh_root = Path(sample_out) / "mesh" / location
     pending = [
         z
         for z in zooms
         if not _mesh_outputs_current(
             mesh_root,
             z,
-            _mesh_index_path(sample_out, model_type, location, z),
+            _mesh_index_path(sample_out, location, z),
         )
     ]
     if not pending:
         return
     ensure_dir(mesh_root)
-    mesh_tiles_per_zoom = _compute_mesh_tiles(rep_file, pending)
+    mesh_tiles_per_zoom = _compute_mesh_tiles(rep_file, pending, surge_file)
     for z, tiles in mesh_tiles_per_zoom.items():
-        _write_mesh_outputs(mesh_root, sample_out, model_type, location, z, tiles)
+        _write_mesh_outputs(mesh_root, sample_out, location, z, tiles)
         _write_mesh_complete_marker(mesh_root, z)
 
 
@@ -357,7 +378,6 @@ def _prepare_file(
     zooms = resolve_zooms(target_zooms, parts.location)
     mesh_tiles_per_zoom = _load_mesh_indices(
         sample_out,
-        parts.model_type,
         parts.location,
         zooms,
     )
@@ -415,14 +435,31 @@ def collect_files(sample_in: str | Path) -> list[Path]:
 def _pretile_meshes(
     files: list[Path], target_zooms: dict[str, list[int]], sample_out: str | Path
 ) -> None:
-    """(model_type, location)별 첫 파일을 대표로 골라 메쉬 타일을 sample_out/mesh/에 미리 저장."""
-    seen: dict[tuple[str, str], Path] = {}
+    """location당 메쉬 타일을 sample_out/mesh/{location}/에 1벌만 미리 저장.
+
+    SURGE/WAVE 메쉬가 동일하므로 model_type로 나누지 않는다. 육지 마스크용 SURGE 파일은
+    같은 location의 surge 파일에서 가져온다(대표 파일도 가능하면 surge 우선).
+    """
+    surge_by_location: dict[str, Path] = {}
+    rep_by_location: dict[str, Path] = {}
     for p in files:
         parts = parse_filename(p)
-        seen.setdefault((parts.model_type, parts.location), p)
-    for (model, location), rep in seen.items():
+        if parts.model_type == "surge":
+            surge_by_location.setdefault(parts.location, p)
+        rep_by_location.setdefault(parts.location, p)
+    boundaries_root = Path(sample_out).parent / "boundaries"
+    for location, rep in rep_by_location.items():
+        surge_file = surge_by_location.get(location)
         zooms = resolve_zooms(target_zooms, location)
-        tile_mesh_for_group(rep, zooms, sample_out, model, location)
+        rep_file = surge_file or rep
+        tile_mesh_for_group(rep_file, surge_file, zooms, sample_out, location)
+        if location.casefold() != "korea":
+            try:
+                write_boundary_geojson(
+                    rep_file, location, boundaries_root / location
+                )
+            except Exception as exc:  # 경계 추출 실패는 메쉬/값 생성을 막지 않음.
+                print(f"[boundary] {location}: failed — {exc}")
 
 
 def start_subset(

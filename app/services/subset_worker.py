@@ -10,7 +10,7 @@ import traceback
 from app.services.subset_runner import run_auto_subset
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     os.umask(0o022)
 
     parser = argparse.ArgumentParser()
@@ -19,7 +19,7 @@ def main() -> None:
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--status-path", required=True)
     parser.add_argument("--lock-path", required=True)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     status_path = Path(args.status_path)
     lock_path = Path(args.lock_path)
