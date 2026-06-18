@@ -15,3 +15,4 @@ fiona
 pyproj
 gunicorn
 rich
+watchdog

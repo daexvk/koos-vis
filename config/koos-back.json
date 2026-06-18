@@ -4,7 +4,20 @@
     "_description": "Electron starts the backend on this localhost API address.",
     "host": "127.0.0.1",
     "port": 8197,
-    "workers": 1
+    "workers": 1,
+    "open_browser": true
+  },
+  "auth": {
+    "_description": "API key required in the x-api-key request header.",
+    "api_key": "enter-your-key"
+  },
+  "subset_watch": {
+    "_description": "Automatically run subset jobs when model .slf files under paths.subset_input_root change.",
+    "enabled": true,
+    "debounce_seconds": 30,
+    "stable_seconds": 60,
+    "poll_interval_seconds": 5,
+    "patterns": ["*_surge_*.slf", "*_wave_*.slf"]
   },
   "paths": {
     "_description": "input_root is the external source data root, usually the T7 NSTORM folder. output_root is the generated backend data root, currently this project's data folder.",
@@ -30,6 +43,9 @@
     "flood_time_root": "flood_tiles_time",
     "uv_time_root": "tiles_uv_time",
     "wave_time_root": "wave_tiles_time",
-    "coastline_json": "coastline.json"
+    "coastline_json": "coastline.json",
+
+    "_static_paths": "Frontend static files. Relative values are resolved from this config file directory.",
+    "static_root": "../static"
   }
 }

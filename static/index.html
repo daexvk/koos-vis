@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Intl.Segmenter 폴리필 (word 단위, UAX#29 근사).
+      // maplibre-gl이 Intl.Segmenter를 사용하는데 Firefox 102(ESR)에서 미지원이라
+      // 호환을 위해 폴리필한다. 네이티브 지원 시 건너뛴다.
+      // 모듈 번들(deferred)보다 먼저 동기 실행되도록 head 인라인으로 둔다.
+      (function () {
+        if (typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function') return;
+        if (typeof Intl === 'undefined') window.Intl = {};
+
+        // Word_Break 분류용 정규식. \p 미지원(구형 엔진) 시 근사치로 폴백.
+        var reWord, reCJK, reMark, reRI;
+        try {
+          reWord = /[\p{L}\p{N}\p{M}]/u;
+          reCJK = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}々〇〻]/u;
+          reMark = /\p{M}/u;
+          reRI = /\p{Regional_Indicator}/u;
+        } catch (e) {
+          reWord = /[A-Za-z0-9_À-￿]/;
+          reCJK = /[぀-ヿ㐀-鿿豈-﫿]/;
+          reMark = /[̀-ͯ]/;
+          reRI = /[\u{1f1e6}-\u{1f1ff}]/u;
+        }
+        var reWS = /\s/;
+        var ZWJ = '‍';
+        var VS16 = '️';
+        var isCJK = function (c) { return reCJK.test(c); };
+        var isWordChar = function (c) { return reWord.test(c) && !isCJK(c); };
+
+        // word: 라틴/숫자 등은 묶고, CJK 한 글자씩, 공백 런은 한 덩어리, 그 외는 글자별.
+        function segmentWord(input) {
+          var chars = Array.from(input);
+          var out = [];
+          var i = 0, offset = 0;
+          while (i < chars.length) {
+            var startOffset = offset;
+            var c = chars[i];
+            if (isCJK(c)) {
+              out.push({ segment: c, index: startOffset, isWordLike: true });
+              offset += c.length; i++;
+            } else if (isWordChar(c)) {
+              var s = '';
+              while (i < chars.length && isWordChar(chars[i])) { s += chars[i]; offset += chars[i].length; i++; }
+              out.push({ segment: s, index: startOffset, isWordLike: true });
+            } else if (reWS.test(c)) {
+              var w = '';
+              while (i < chars.length && reWS.test(chars[i])) { w += chars[i]; offset += chars[i].length; i++; }
+              out.push({ segment: w, index: startOffset, isWordLike: false });
+            } else {
+              out.push({ segment: c, index: startOffset, isWordLike: false });
+              offset += c.length; i++;
+            }
+          }
+          return out;
+        }
+
+        // grapheme: 코드포인트 + 결합 마크/ZWJ 이모지/지역지시자 쌍 묶기.
+        function segmentGrapheme(input) {
+          var chars = Array.from(input);
+          var out = [];
+          var i = 0, offset = 0;
+          while (i < chars.length) {
+            var startOffset = offset;
+            var s = chars[i]; offset += chars[i].length; i++;
+            if (reRI.test(s) && i < chars.length && reRI.test(chars[i])) {
+              s += chars[i]; offset += chars[i].length; i++;
+            }
+            while (i < chars.length) {
+              var nx = chars[i];
+              if (reMark.test(nx) || nx === ZWJ) {
+                s += nx; offset += nx.length; i++;
+                if (chars[i - 1] === ZWJ && i < chars.length) { s += chars[i]; offset += chars[i].length; i++; }
+              } else if (nx === VS16) {
+                s += nx; offset += nx.length; i++;
+              } else break;
+            }
+            out.push({ segment: s, index: startOffset });
+          }
+          return out;
+        }
+
+        // sentence: 종결 부호 + 뒤따르는 닫음 부호/공백까지 한 문장.
+        function segmentSentence(input) {
+          var out = [];
+          var len = input.length, start = 0, i = 0;
+          var term = /[.!?。！？…]/;
+          var trail = /["'\)\]」”’]/;
+          while (i < len) {
+            if (term.test(input[i])) {
+              i++;
+              while (i < len && (trail.test(input[i]) || term.test(input[i]))) i++;
+              while (i < len && reWS.test(input[i])) i++;
+              out.push({ segment: input.slice(start, i), index: start });
+              start = i;
+            } else { i++; }
+          }
+          if (start < len) out.push({ segment: input.slice(start), index: start });
+          return out;
+        }
+
+        function makeSegments(input, data) {
+          return {
+            [Symbol.iterator]: function () {
+              var k = 0;
+              return {
+                next: function () {
+                  if (k >= data.length) return { value: undefined, done: true };
+                  var d = data[k++];
+                  var v = { segment: d.segment, index: d.index, input: input };
+                  if ('isWordLike' in d) v.isWordLike = d.isWordLike;
+                  return { value: v, done: false };
+                },
+              };
+            },
+            containing: function (index) {
+              index = index || 0;
+              for (var j = 0; j < data.length; j++) {
+                var d = data[j];
+                if (index >= d.index && index < d.index + d.segment.length) {
+                  var v = { segment: d.segment, index: d.index, input: input };
+                  if ('isWordLike' in d) v.isWordLike = d.isWordLike;
+                  return v;
+                }
+              }
+              return undefined;
+            },
+          };
+        }
+
+        function Segmenter(locales, options) {
+          options = options || {};
+          this._locale = (Array.isArray(locales) ? locales[0] : locales) || 'en';
+          this._granularity = options.granularity || 'grapheme';
+        }
+        Segmenter.prototype.segment = function (input) {
+          input = String(input);
+          var data =
+            this._granularity === 'word' ? segmentWord(input)
+            : this._granularity === 'sentence' ? segmentSentence(input)
+            : segmentGrapheme(input);
+          return makeSegments(input, data);
+        };
+        Segmenter.prototype.resolvedOptions = function () {
+          return { locale: this._locale, granularity: this._granularity };
+        };
+
+        Intl.Segmenter = Segmenter;
+      })();
+    </script>
+    <title>koos-front-renew</title>
+    <script type="module" crossorigin src="/koos/assets/index-dEGOmae7.js"></script>
+    <link rel="stylesheet" crossorigin href="/koos/assets/index-Dw2qapfk.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

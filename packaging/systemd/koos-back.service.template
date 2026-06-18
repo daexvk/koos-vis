@@ -1,0 +1,15 @@
+[Unit]
+Description=KOOS backend web server
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/koos-back --config __APP_DIR__/config/koos-back.json serve --no-open-browser
+Restart=on-failure
+RestartSec=5
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

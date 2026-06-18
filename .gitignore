@@ -1,7 +1,19 @@
-/static
+.env
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local/generated data and previews
 data/
 coastline_preview.html
 app/settings/test_0513.py
-__pycache__/
-.env
-.venv
+
+# Build artifacts
+build/
+dist/
+*.spec
+*.tar.gz
+
+# Local container build helpers/artifacts not needed on the RHEL target
+.dockerignore
+docker/
