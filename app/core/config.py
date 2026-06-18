@@ -5,11 +5,13 @@ from functools import lru_cache
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "koos-back.json"
+RUNTIME_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else PROJECT_ROOT
+DEFAULT_CONFIG_PATH = RUNTIME_ROOT / "config" / "koos-back.json"
 CONFIG_ENV_NAME = "KOOS_BACK_CONFIG"
 
 
@@ -18,6 +20,22 @@ class ServerSettings:
     host: str
     port: int
     workers: int
+    open_browser: bool
+    browser_url: str | None
+
+
+@dataclass(frozen=True)
+class AuthSettings:
+    api_key: str | None
+
+
+@dataclass(frozen=True)
+class SubsetWatchSettings:
+    enabled: bool
+    debounce_seconds: float
+    stable_seconds: float
+    poll_interval_seconds: float
+    patterns: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -43,12 +61,15 @@ class PathSettings:
     uv_time_root: Path
     wave_time_root: Path
     coastline_json: Path
+    static_root: Path
 
 
 @dataclass(frozen=True)
 class Settings:
     config_path: Path | None
     server: ServerSettings
+    auth: AuthSettings
+    subset_watch: SubsetWatchSettings
     paths: PathSettings
 
 
@@ -66,12 +87,32 @@ def get_settings() -> Settings:
     config_dir = config_path.parent if config_path is not None else PROJECT_ROOT
 
     server_config = _section(config, "server")
+    auth_config = _section(config, "auth")
+    subset_watch_config = _section(config, "subset_watch")
     paths_config = _section(config, "paths")
 
     server = ServerSettings(
         host=str(server_config.get("host", "127.0.0.1")),
         port=int(server_config.get("port", 8197)),
         workers=int(server_config.get("workers", 1)),
+        open_browser=_as_bool(server_config.get("open_browser", False)),
+        browser_url=_optional_str(server_config.get("browser_url")),
+    )
+    auth = AuthSettings(
+        api_key=_optional_str(auth_config.get("api_key")) or _optional_str(os.getenv("API_KEY")),
+    )
+    subset_watch = SubsetWatchSettings(
+        enabled=_as_bool(subset_watch_config.get("enabled", False)),
+        debounce_seconds=float(subset_watch_config.get("debounce_seconds", 30)),
+        stable_seconds=float(subset_watch_config.get("stable_seconds", 60)),
+        poll_interval_seconds=float(subset_watch_config.get("poll_interval_seconds", 5)),
+        patterns=tuple(
+            str(pattern)
+            for pattern in subset_watch_config.get(
+                "patterns",
+                ["*_surge_*.slf", "*_wave_*.slf"],
+            )
+        ),
     )
 
     input_root = _resolve_root(
@@ -141,8 +182,19 @@ def get_settings() -> Settings:
             output_root,
         ),
         coastline_json=_resolve_under_root(paths_config.get("coastline_json"), "coastline.json", output_root),
+        static_root=_resolve_root(
+            paths_config.get("static_root"),
+            default=RUNTIME_ROOT / "static",
+            config_dir=config_dir,
+        ),
     )
-    return Settings(config_path=config_path, server=server, paths=paths)
+    return Settings(
+        config_path=config_path,
+        server=server,
+        auth=auth,
+        subset_watch=subset_watch,
+        paths=paths,
+    )
 
 
 def _find_config_path() -> Path | None:
@@ -182,3 +234,20 @@ def _resolve_under_root(value: Any, default: str, root: Path) -> Path:
     if path.is_absolute():
         return path
     return (root / path).resolve()
+
+
+def _as_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
